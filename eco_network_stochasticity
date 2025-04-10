@@ -1,0 +1,116 @@
+#install packages
+install.packages('deSolve')
+install.packages('igraph')
+install.packages('dplyr')
+library('deSolve')
+library('igraph')
+library('dplyr')
+
+#generalised lotka-volterra function with environmental stochasticity
+stochastic_glv<- function(t, N, parameters){
+  with(as.list(c(N, parameters)),{
+    N[N<10^-8]<- 0                                               #makes so that all numbers below 10^-8 are considered extinct
+    Zi<- rnorm(length(N), mean=0, sd=1)                          #random variable for noise
+    dNdt<- N*(r+interactions%*%N)+N*Zi*xi*sqrt(time_steps)       #noise is controlled by xi & sqrt(time_steps)
+    list(dNdt)
+  })
+}
+
+#adjacency matrix of interactions
+adj_interactions<- matrix(c(1, 0, 1, 1, 0,
+                            0, 1, 1, 1, 0,
+                            1, 1, 1, 0, 1,
+                            1, 1, 0, 1, 1,
+                            0, 0, 1, 1, 1), 5,5, byrow=TRUE,
+                          dimnames=list(c('P1', 'P2', 'H1', 'H2', 'TP'),
+                                        c('P1', 'P2', 'H1', 'H2', 'TP')))
+#visualise trophic network as a diagram
+g<- graph_from_adjacency_matrix(adj_interactions)
+plot(g, vertex.color=c("turquoise3", "seagreen4", "darkorange1", "darkgoldenrod1", "red3"), edge.color="grey70")
+#number of species
+S<- dim(adj_interactions)[1]
+#number of links
+L<- sum(adj_interactions)
+#average number of links per species
+L.S<-L/S
+#connectance
+C<- L/S^2
+#matrix of weighted interactions (adds values to each inter-/intra-specific interaction)
+interactions<- matrix(c(-0.1, 0, -0.2, -0.15, 0,
+                        0, -0.15, -0.2, -0.15, 0,
+                        0.4, 0.3, -0.25, 0, -0.3,
+                        0.3, 0.4, 0, -0.2, -0.3,
+                        0, 0, 0.5, 0.5, -0.4), 5,5, byrow=TRUE)
+
+#define parameters for 5 species
+#intrinsic growth rates 
+r<- c(0.75, 0.7, 0.55, 0.5, 0.3)
+#noise strength per species
+xi<- c(0, 0, 0, 0, 0)         #change xi value to 0.3 and 1.5 to see the effect of environmental variation (per trophic level)
+#time steps
+time_steps<- 0.1
+parameters<- list(r=r, interactions=interactions, xi=xi, time_steps=time_steps)
+#create intial populations
+N0<- c(3, 3, 2, 2, 0.2)
+#simulation time
+times<- seq(0, 40, by=time_steps)
+
+#run simulation
+set.seed(975)                #inserting a seed allows for exact replicability when using random numbers
+out<- ode(y=N0, times=times, func=stochastic_glv, parms=parameters, method="euler")
+#plot 
+matplot(out[,1], out[,-1], type="l", lty=1, lwd=1.3,
+        xlab="Time", ylab="Abundance", col=c("turquoise3", "seagreen4", "darkorange1", "darkgoldenrod1", "red3"))
+legend("topright", legend = c("P1", "P2", "H1", "H2", "TP"), col=c("turquoise3", "seagreen4", "darkorange1", "darkgoldenrod1", "red3"), lty = 1, lwd=2, cex=0.8)
+text(30, 7.8, "xi=0", cex=0.9)          #change label to match the noise level and trophic level appropriately
+
+
+#STATISTICAL ANALYSIS
+#trophic level definitions
+trophic_levels<- list(
+  producers=c(1, 2),
+  herbivores=c(3, 4),
+  top_predator=5
+)
+#for-loop to run simulation in order to gather results to use for statistical testing (uses the same seed as before for random numbers)
+results<- data.frame()
+for(level_name in names(trophic_levels)){
+  for(xi_value in seq(0.3,1.5, by=1.2)){    #changes in noise value
+    xi_base<- rep(0, 5)                     #base noise value for all species (0)
+    xi_base[trophic_levels[[level_name]]]<-xi_value
+    parameters <- list(r = r, interactions = interactions, xi_base = xi_base, time_steps = time_steps)
+    out <- ode(y = N0, times = times, func = stochastic_glv, parms = parameters, method = "euler")
+    final_abundances<- tail(out[,1],1)
+    extinct<- sum(final_abundances<0.01)
+    total_biomass<- sum(final_abundances)
+    species_CV<- apply(out[,-1], 2, function(x) sd(x)/mean(x))
+    results<- rbind(results, data.frame(
+      Trophic_Level=level_name,
+      xi_value=xi_value,
+      Mean_Biomass=total_biomass,
+      Mean_CV=mean(species_CV, na.rm=TRUE),
+      Extinctions=extinct
+    ))
+  }
+}
+
+#convert trophic level to a factor to use in testing
+results$Trophic_Level<- as.factor(results$Trophic_Level)
+
+#linear regression analysis
+#effect on stability
+lm_cv<- lm(Mean_CV~xi_value, data=results)
+summary(lm_cv)
+coef(lm_cv)
+#effect on stability per trophic level
+lm_cv_trophic<- lm(Mean_CV~xi_value*Trophic_Level, data=results)
+summary(lm_cv_trophic)
+coef(lm_cv_trophic)
+#effect on biomass
+lm_biomass <- lm(Mean_Biomass ~ xi_value, data = results)
+summary(lm_biomass)
+coef(lm_biomass)
+#effect on biomass per trophic level
+lm_biomass_trophic <- lm(Mean_Biomass ~ xi_value*Trophic_Level, data = results)
+summary(lm_biomass_trophic)
+coef(lm_biomass_trophic)

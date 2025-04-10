@@ -1,3 +1,5 @@
+#STOCHASTIC ECOLOGICAL NETWORKS - implementing environmental variation to community dynamics
+
 #install packages
 install.packages('deSolve')
 install.packages('igraph')
@@ -54,10 +56,10 @@ parameters<- list(r=r, interactions=interactions, xi=xi, time_steps=time_steps)
 N0<- c(3, 3, 2, 2, 0.2)
 #simulation time
 times<- seq(0, 40, by=time_steps)
-
 #run simulation
 set.seed(975)                #inserting a seed allows for exact replicability when using random numbers
 out<- ode(y=N0, times=times, func=stochastic_glv, parms=parameters, method="euler")
+
 #plot 
 matplot(out[,1], out[,-1], type="l", lty=1, lwd=1.3,
         xlab="Time", ylab="Abundance", col=c("turquoise3", "seagreen4", "darkorange1", "darkgoldenrod1", "red3"))
@@ -72,6 +74,7 @@ trophic_levels<- list(
   herbivores=c(3, 4),
   top_predator=5
 )
+
 #for-loop to run simulation in order to gather results to use for statistical testing (uses the same seed as before for random numbers)
 results<- data.frame()
 for(level_name in names(trophic_levels)){
@@ -102,14 +105,17 @@ results$Trophic_Level<- as.factor(results$Trophic_Level)
 lm_cv<- lm(Mean_CV~xi_value, data=results)
 summary(lm_cv)
 coef(lm_cv)
+
 #effect on stability per trophic level
 lm_cv_trophic<- lm(Mean_CV~xi_value*Trophic_Level, data=results)
 summary(lm_cv_trophic)
 coef(lm_cv_trophic)
+
 #effect on biomass
 lm_biomass <- lm(Mean_Biomass ~ xi_value, data = results)
 summary(lm_biomass)
 coef(lm_biomass)
+
 #effect on biomass per trophic level
 lm_biomass_trophic <- lm(Mean_Biomass ~ xi_value*Trophic_Level, data = results)
 summary(lm_biomass_trophic)
